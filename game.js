@@ -1,12 +1,14 @@
 const cv=document.getElementById('c'),ctx=cv.getContext('2d');
 const $=id=>document.getElementById(id);
 let bodies,pops,parts,cur,nxt,aimX,cool,score,over,last=0,best=0;
+let playT,hist,retIdx,retT,retN;
 try{best=+(localStorage.getItem('wmBest')||0)}catch(e){}
 const rnd=()=>Math.floor(Math.random()*5);
-const mk=(lv,x,y)=>({lv,r:RADII[lv],x,y,vx:0,vy:0,age:0,warn:0,sc:1,dead:false});
+const mk=(lv,x,y)=>({lv,r:RADII[lv],x,y,vx:0,vy:0,age:0,warn:0,sc:1,dead:false,entering:false});
 
 function reset(){
   bodies=[];pops=[];parts=[];score=0;over=false;cool=0;aimX=W/2;cur=rnd();nxt=rnd();
+  playT=0;hist=[];retIdx=0;retN=0;retT=RETURN_FIRST;
   $('over').hidden=true;hud();
 }
 function hud(){$('score').textContent=score;$('best').textContent=best;$('next').src=Sprites.url(nxt)}
@@ -14,7 +16,13 @@ function drop(){
   if(over||cool>0)return;
   const r=RADII[cur];
   bodies.push(mk(cur,Math.min(W-r,Math.max(r,aimX)),DROP_Y));
+  if(playT<HARD_AFTER)hist.push(cur);   // จำผลไม้ที่หย่อนใน 3 นาทีแรก
   Sound.drop();cur=nxt;nxt=rnd();cool=.5;hud();
+}
+function returnFruit(){   // เอาผลไม้ที่เคยหย่อนกลับมา ดันขึ้นจากใต้กล่องตามลำดับเดิม
+  const lv=hist[retIdx++%hist.length],r=RADII[lv];
+  const f=mk(lv,r+Math.random()*(W-2*r),H+r);
+  f.entering=true;bodies.push(f);retN++;Sound.drop();
 }
 function burst(x,y,lv){
   for(let i=0;i<10;i++){const a=Math.random()*6.28,s=80+Math.random()*140;parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-60,t:0,c:PAL[lv][0]})}
@@ -37,13 +45,17 @@ function update(dt){
   parts.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=600*dt;p.t+=dt});parts=parts.filter(p=>p.t<.5);
   pops.forEach(p=>p.t+=dt);pops=pops.filter(p=>p.t<.3);
   if(over)return;
-  cool-=dt;
+  cool-=dt;playT+=dt;
+  if(playT>=HARD_AFTER&&hist.length){
+    retT-=dt;
+    if(retT<=0){returnFruit();retT=Math.max(RETURN_MIN,RETURN_EVERY-retN*.25)}
+  }
   const pairs=[];
   Physics.step(bodies,dt,(a,b)=>{if(a.lv===b.lv)pairs.push([a,b])});
   merge(pairs);
   for(const b of bodies){
     b.age+=dt;b.sc+=(1-b.sc)*Math.min(1,dt*12);
-    b.warn=(b.age>1&&b.y-b.r<LINE)?b.warn+dt:0;
+    b.warn=(!b.entering&&b.age>1&&b.y-b.r<LINE)?b.warn+dt:0;
     if(b.warn>2){over=true;Sound.over();$('final').textContent=score;$('over').hidden=false}
   }
 }
@@ -65,6 +77,14 @@ function draw(){
     ctx.strokeStyle='#a5622d44';ctx.lineWidth=2;ctx.setLineDash([4,6]);
     ctx.beginPath();ctx.moveTo(x,DROP_Y);ctx.lineTo(x,H);ctx.stroke();ctx.setLineDash([]);
     fruit(cur,x,DROP_Y,1,cool>0?.4:1);
+  }
+  const left=HARD_AFTER-playT;
+  ctx.font='700 14px Fredoka,system-ui,sans-serif';ctx.textAlign='right';
+  if(left>0){
+    const s=Math.floor(playT);
+    ctx.fillStyle='#7a3d10aa';ctx.fillText('⏱ '+Math.floor(s/60)+':'+String(s%60).padStart(2,'0'),W-8,20);
+  }else{
+    ctx.fillStyle=Math.floor(playT*2)%2?'#e5303a':'#e5303acc';ctx.fillText('⬆️ ผลไม้กำลังดันขึ้น!',W-8,20);
   }
 }
 function loop(t){
